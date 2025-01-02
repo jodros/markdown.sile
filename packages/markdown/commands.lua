@@ -149,10 +149,12 @@ function package:_init (_)
   self:loadPackage("math")
   self:loadPackage("ptable")
   self:loadPackage("rules")
+  self:loadPackage("rotate")
   self:loadPackage("smartquotes")
   self:loadPackage("svg")
   self:loadPackage("textsubsuper")
   self:loadPackage("url")
+
 
   -- Do those at the end so the resilient versions may possibly override things.
   self:loadAltPackage("resilient.lists", "lists")
@@ -273,39 +275,52 @@ function package:registerCommands ()
   end, "Paragraphing in Markdown (internal)")
 
   self:registerCommand("markdown:internal:thematicbreak", function (options, _)
-    if hasClass(options, "asterism") then
-      -- Asterism
-      SILE.call("center", {}, { "⁂" })
-    elseif hasClass(options, "dinkus") then
-      -- Dinkus (with em-spaces)
-      SILE.call("center", {}, { "* * *" })
-    elseif hasClass(options, "bigrule") then
-      -- 33% line
-      SILE.call("center", {}, function ()
-        SILE.call("raise", { height = "0.5ex" }, function ()
-          SILE.call("hrule", { width = "33%lw", height = "0.4pt" })
+      SILE.call("skip", { height = "3%ph" })
+
+      if hasClass(options, "asterism") then
+        -- Asterism
+        SILE.call("center", {}, function()
+          SILE.call("rotate", { angle = options.angle or 0 }, { "⁂" })
         end)
-      end)
-    elseif hasClass(options, "fullrule") then
-      -- Full line
-      SILE.call("fullrule", { thickness = "0.4pt" })
-    elseif hasClass(options, "pendant") and self.hasPackageSupport.couyards then
-      -- Pendant, with more options available than in Markdown
-      local opts = {
-        type = SU.cast("integer", options.type or 6),
-        height = options.height,
-        width = not options.height and (options.width or "default")
-      }
-      SILE.call("smallskip")
-      SILE.call("couyard", opts)
-    elseif not hasClass(options, "none") then
-      -- 20% line
-      SILE.call("center", {}, function ()
-        SILE.call("raise", { height = "0.5ex" }, function ()
-          SILE.call("hrule", { width = "20%lw", height = "0.4pt" })
+      elseif hasClass(options, "dinkus") then
+        -- Dinkus (with em-spaces)
+        SILE.call("center", {}, { "* * *" })
+      elseif hasClass(options, "loopedsquare") then
+        -- Looped square
+        SILE.call("center", {}, function()
+          SILE.call("font", { family = "Noto Sans JP" }, function()
+            SILE.call("rotate", { angle = 45 }, { "⌘" })
+            end)
+          end)
+      elseif hasClass(options, "bigrule") then
+        -- 33% line
+        SILE.call("center", {}, function ()
+          SILE.call("raise", { height = "0.5ex" }, function ()
+            SILE.call("hrule", { width = "33%lw", height = "0.4pt" })
+          end)
         end)
-      end)
-    end
+      elseif hasClass(options, "fullrule") then
+        -- Full line
+        SILE.call("fullrule", { thickness = "0.4pt" })
+      elseif hasClass(options, "pendant") and self.hasPackageSupport.couyards then
+        -- Pendant, with more options available than in Markdown
+        local opts = {
+          type = SU.cast("integer", options.type or 6),
+          height = options.height,
+          width = not options.height and (options.width or "default")
+        }
+        SILE.call("smallskip")
+        SILE.call("couyard", opts)
+      elseif not hasClass(options, "none") then
+        -- 20% line
+        SILE.call("center", {}, function ()
+          SILE.call("raise", { height = "0.5ex" }, function ()
+            SILE.call("hrule", { width = "20%lw", height = "0.4pt" })
+          end)
+        end)
+      end
+
+    SILE.call("skip", { height = "3%ph" })
 
     if hasClass(options, "pagebreak") then
       SILE.call("eject")
