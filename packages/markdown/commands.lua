@@ -4,7 +4,7 @@
 -- Split in a standalone package so that it can be reused and
 -- generalized somewhat independently from the underlying parsing code.
 --
--- @copyright License: MIT (c) 2022-2024 Omikhleia, Didier Willis
+-- @copyright License: MIT (c) 2022-2025 Omikhleia, Didier Willis
 -- @module packages.markdown.commands
 --
 require("silex.lang") -- Compatibility layer
@@ -78,16 +78,6 @@ local function implicitFigure (paracontent)
   return image, caption
 end
 
--- Default color theme for syntax highlighted Lua code blocks
--- Very loosely based on the 'earendel' vim style.
-local naiveLuaCodeTheme = {
-  comment = { color = "#558817", italic = true },
-  keyword = { color = "#2239a8", bold = true },
-  iden = { color = "#0e7c6b" },
-  number = { color = "#a8660d" },
-  string = { color = "#a8660d" },
-}
-
 -- Inputfilter callback for splitting strings at numbers and formatting
 -- them as decimal numbers.
 local function decimalFilter (input, _)
@@ -103,7 +93,9 @@ local function decimalFilter (input, _)
 end
 
 local function wrapLinkContent (options, content)
-  local passedOptions = pl.tablex.copy(options) -- shallow
+  -- shallow copy before removing internal options
+  -- (Content may be reused in pseudo-symbol macros or other means)
+  local passedOptions = pl.tablex.copy(options)
   -- We already took care of these.
   passedOptions.src = nil
   passedOptions.id = nil
@@ -140,9 +132,10 @@ function package:_init (_)
   -- The class should be responsible for loading the appropriate higher-level
   -- constructs, see fallback commands further below for more details.
   self:loadPackage("bibtex")
-  SILE.settings:set("bibtex.style", "csl") -- The future is CSL
+  SILE.settings:set("bibtex.style", "csl") -- The future is CSL (active by default with SILE 0.15.10)
   self:loadPackage("color")
   self:loadPackage("embedders")
+  self:loadPackage("highlighter")
   self:loadPackage("image")
   self:loadPackage("inputfilter")
   self:loadPackage("labelrefs")
@@ -249,9 +242,12 @@ function package:registerCommands ()
         -- We'll want the ID to apply to the captioning environment (to potentially
         -- use the caption numbering)
         local id = image.options.id
-        image.options.id = nil
+        local imgOptions = pl.tablex.copy(image.options)
+        -- Shallow copy before removing internal options
+        -- (Content may be reused in pseudo-symbol macros or other means)
+        imgOptions.id = nil
         -- We also propagate image options to the englobing environment
-        SILE.call("markdown:internal:captioned-figure", image.options, {
+        SILE.call("markdown:internal:captioned-figure", imgOptions, {
           image,
           createCommand("caption", {}, {
             createCommand("label", { marker = id }),
@@ -523,6 +519,9 @@ Please consider using a resilient-compatible class!]])
       if not (self.hasPackageSupport.piecharts or self.hasPackageSupport.piechart) then -- HACK Some early versions of piecharts have the wrong internal name
         SU.error("No piecharts package available to render CSV data ".. uri)
       end
+      -- Shallow copy before removing internal options
+      -- (Content may be reused in pseudo-symbol macros or other means)
+      options = pl.tablex.copy(options)
       options.src = nil
       options.csvfile = uri
       SILE.call("piechart", options)
@@ -633,18 +632,19 @@ Please consider using a resilient-compatible class!]])
     end
   end, "Raw native block in Markdown (internal)")
 
-  self:registerCommand("markdown:internal:blockquote", function (_, content)
-    -- Would be nice NOT having to do this, but SILE's plain class only has a "quote"
-    -- environment that doesn't really nest, and hard-codes all its values, skips, etc.
+  self:registerCommand("markdown:internal:blockquote", function (options, content)
+    -- NOTE: The comment below applies to SILE 0.14.x.
+    -- SILE's plain class only has a "quote" environment that doesn't really nest, and
+    -- hard-codes all its values, skips, etc.
     -- So we might have a better version provided by a user-class or package.
     -- Otherwise, use our own fallback (with hard-coded choices too, but a least
     -- it does some proper nesting)
-    -- NOTE: The above applies to SILE 0.14.x.
-    -- SILE 0.15 is expected to provide a blockquote environment.
+    -- SILE 0.15.0 provides a blockquote environment, so eventually this fallback
+    -- will be removed when we officially drop support for SILE 0.14.x.
     if not self.hasCommandSupport.blockquote then
-      SILE.call("markdown:fallback:blockquote", {}, content)
+      SILE.call("markdown:fallback:blockquote", options, content)
     else
-      SILE.call("blockquote", {}, content)
+      SILE.call("blockquote", options, content)
     end
   end, "Block quote in Markdown (internal)")
 
@@ -688,55 +688,32 @@ Please consider using a resilient-compatible class!]])
 
   -- Code blocks
 
-  self:registerCommand("markdown:internal:lua-highlighter", function (options, content)
-    -- Naive syntax highlighting for Lua, until we have a more general solution
-    local tree = {}
-    if options.id then
-      tree[#tree+1] = createCommand("label", { marker = options.id })
-    end
-    local toks = pl.lexer.lua(content[1], {})
-    for tag, v in toks do
-      local out = tostring(v)
-      if tag == "string" then
-        -- rebuild string quoting...
-        out = out:match('"') and ("'"..out.."'") or ('"'..out..'"')
-      end
-      if naiveLuaCodeTheme[tag] then
-        local cascade = CommandCascade()
-        if naiveLuaCodeTheme[tag].color then
-          cascade:call("color", { color = naiveLuaCodeTheme[tag].color })
-        end
-        if naiveLuaCodeTheme[tag].bold then
-          cascade:call("strong", {})
-        end
-        if naiveLuaCodeTheme[tag].italic then
-          cascade:call("em", {})
-        end
-        tree[#tree+1] = cascade:tree({ out })
-      else
-        tree[#tree+1] = SU.utf8charfromcodepoint("U+200B")..out -- HACK with ZWSP to trick the typesetter respecting standalone linebreaks
-      end
-    end
-    SILE.call("verbatim", {}, tree)
-  end, "Lua code block naive syntax highlighting in Markdown or Djot (internal)")
-
   self:registerCommand("markdown:internal:codeblock", function (options, content)
     local render = SU.boolean(options.render, true)
     local processed = false
-    if hasClass(options, "lua") then
-      -- Comes first as we don't want SILE raw handler to take over here.
-      -- (There's no such raw handler in the standard SILE distribution currently,
-      -- but let's be cautious.)
-      SILE.call("markdown:internal:lua-highlighter", options, content)
-      processed = true
-    elseif render then
+    local render_exceptions = hasClass(options, "lua") or hasClass(options, "sil") or hasClass(options, "xml")
+    if render and not render_exceptions then
+      -- If render is true, we try to to render the code block "natively":
+      --  - With a raw handler if available
+      --  - Or with an embed handler if available
+      -- If none of those are available, the non-rendered logic is used.
+      -- Lua, XML, SIL are exceptions, the proper way to execute code blocks
+      -- is to use raw code blocks (=sile or sile-lua formats).
       local handler = utils.hasRawHandler(options)
       if handler then
+        if options.id then
+          -- This would introduce a line break in some case, so we don't do it.
+          SU.warn("Ignoring id attribute in code block with raw handler (".. options.id ..")")
+        end
         handler(options, content)
         processed = true
       else
         local format, embed = utils.hasEmbedHandler(options)
         if format then
+          if options.id then
+            -- Assuming embedders render an image, the label marker can be inlined with it.
+            SILE.call("label", { marker = options.id })
+          end
           options.format = format
           embed(options, content)
           processed = true
@@ -744,15 +721,18 @@ Please consider using a resilient-compatible class!]])
       end
     end
     if not processed then
-      -- Default case: just raw unstyled verbatim text
-      SILE.call("verbatim", {},
-        options.id and {
-          createCommand("label", { marker = options.id }),
-          subContent(content)
-        } or {
-          subContent(content)
-        }
-      )
+      -- Default case: just output the code block as verbatim,
+      -- We pass to the highlighter handler for potential syntax highlighting.
+      if options.id then
+        -- As above, but this would be doable here, either in the highlighter
+        -- or even in the verbatim environment.
+        -- But as long as we can support both the standard and the resilient verbatim
+        -- environments, we don't do it, the former wouldn't honor it...
+        -- (Neither the resilient verbatim at this point but that would be in our control.)
+        SU.warn("Ignoring id attribute in standard code block (".. options.id ..")")
+      end
+      local handler = SILE.rawHandlers.highlight
+      handler(options, content)
     end
     SILE.call("par")
   end, "(Fenced) code block in Markdown (internal)")
@@ -862,6 +842,9 @@ Please consider using a resilient-compatible class!]])
       local text = ":" .. symbol .. ":"
       content = { text }
     end
+    -- Shallow copy before removing internal options
+    -- (Content may be reused in pseudo-symbol macros or other means)
+    options = pl.tablex.copy(options)
     options._symbol_ = nil
     options._standalone_ = nil
     if next(options) and not standalone then
@@ -871,12 +854,6 @@ Please consider using a resilient-compatible class!]])
       SILE.process(content)
     end
   end, "Symbol in Djot (internal)")
-
-  self:registerCommand("markdown:internal:citations", function (_, content)
-    -- We cannot handle multiple citations yet in a single call.
-    -- See https://github.com/sile-typesetter/sile/issues/2196
-    SILE.process(content)
-  end, "Citations (internal)")
 
   -- B. Fallback commands
 

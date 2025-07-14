@@ -15,7 +15,7 @@ For casual readers, this collection notably aims at easily converting Djot or Ma
 
 ## Installation
 
-This module collection requires SILE v0.14 or upper.
+This module collection requires SILE v0.14 or upper (recommended: v0.15.10).
 
 Installation relies on the **luarocks** package manager.
 
@@ -147,13 +147,13 @@ This is but an overview. For more details, please refer to the provided example 
   - Definition lists
 - Horizontal dividers / thematic breaks (with provision for asterisms, dinkuses, pendants...)
 - Tables (and table captions)
-- Code blocks (with attributes)
+- Code blocks (with attributes, and syntax highlighting when supported)
 - Line blocks (with enhanced provision for poetry)
 - Raw inlines and raw blocks (escaping to SILE, in SIL language or Lua scripting)
 - Raw inline HTML convenience subset in Markdown
 - Advanced use of symbols in Djot (variable substitution ,and templating)
 - Advanced configuration (e.g. Markdown variants, headings shifting, etc.)
-- Bibliography citations (when appropriate support is enabled)
+- Bibliography citations
 
 ## Use with the resilient collection
 
