@@ -289,6 +289,9 @@ function package:registerCommands ()
             SILE.call("rotate", { angle = 45 }, { "⌘" })
             end)
           end)
+      elseif hasClass(options, "rubelhizb") then
+        -- Rub el Hizb (islamic symbol)
+        SILE.call("center", {}, { "۞" })
       elseif hasClass(options, "bigrule") then
         -- 33% line
         SILE.call("center", {}, function ()
